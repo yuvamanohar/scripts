@@ -59,8 +59,15 @@ class ConfigTests(TempWorkspace):
         with self.assertRaises(sync_folders.SyncError):
             sync_folders.build_config(self.source / "missing", self.target, env={})
 
+        missing_target = self.root / "new" / "target"
+        config = sync_folders.build_config(self.source, missing_target, env={})
+        self.assertEqual(missing_target, config.target)
+        self.assertTrue(missing_target.is_dir())
+
+        target_file = self.root / "target-file"
+        target_file.write_text("not a directory", encoding="utf-8")
         with self.assertRaises(sync_folders.SyncError):
-            sync_folders.build_config(self.source, self.target / "missing", env={})
+            sync_folders.build_config(self.source, target_file, env={})
 
         with self.assertRaises(sync_folders.SyncError):
             sync_folders.build_config(self.source, self.target, output_dir=self.root / "missing", env={})
@@ -116,6 +123,10 @@ class DifferenceTests(TempWorkspace):
         os.utime(source_file, ns=(1_704_051_060_000_000_000, 1_704_051_060_000_000_000))
         os.utime(target_file, ns=(1_704_051_120_000_000_000, 1_704_051_120_000_000_000))
         self.assertTrue(sync_folders.files_differ(source_file, target_file))
+
+        os.utime(source_file, ns=(1_704_051_060_100_000_000, 1_704_051_060_100_000_000))
+        os.utime(target_file, ns=(1_704_051_060_900_000_000, 1_704_051_060_900_000_000))
+        self.assertFalse(sync_folders.files_differ(source_file, target_file))
 
     def test_diff_report_formats_empty_and_populated_sections(self) -> None:
         report = sync_folders.DifferenceResult(

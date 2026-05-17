@@ -87,6 +87,12 @@ def validate_directory(path: Path, label: str) -> None:
         raise SyncError(f"{label} does not exist or is not a directory: {path}")
 
 
+def ensure_target_directory(path: Path) -> None:
+    if path.exists() and not path.is_dir():
+        raise SyncError(f"Target folder exists but is not a directory: {path}")
+    path.mkdir(parents=True, exist_ok=True)
+
+
 def build_config(
     source: str | Path,
     target: str | Path,
@@ -112,7 +118,7 @@ def build_config(
     )
 
     validate_directory(config.source, "Source folder")
-    validate_directory(config.target, "Target folder")
+    ensure_target_directory(config.target)
     validate_directory(config.output_dir, "Output directory")
     if config.batch_size < 1:
         raise SyncError(f"SYNC_BATCH_SIZE must be a positive integer: {config.batch_size}")
@@ -133,7 +139,7 @@ def files_differ(source_file: Path, target_file: Path) -> bool:
     target_stat = target_file.stat()
     return (
         source_stat.st_size != target_stat.st_size
-        or source_stat.st_mtime_ns != target_stat.st_mtime_ns
+        or int(source_stat.st_mtime) != int(target_stat.st_mtime)
     )
 
 

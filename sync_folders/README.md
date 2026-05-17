@@ -33,8 +33,8 @@ Example:
 ./sync_folders.py /path/to/source /path/to/backup
 ```
 
-Both arguments must be existing directories. The script does not create the
-target folder for you.
+The source folder must already exist. If the target folder does not exist, the
+script creates it.
 
 Optional environment variables:
 
@@ -72,9 +72,10 @@ up automatically after each batch.
 ## Sync Behavior
 
 - Directory structure is preserved relative to the source folder.
-- Existing target files are overwritten when their size or modified time differs.
+- Existing target files are overwritten when their size or whole-second modified
+  time differs.
 - Extra files that exist only in the target folder are not deleted.
-- File comparison uses size and modified time, not file checksums.
+- File comparison uses size and whole-second modified time, not file checksums.
 - Files are synced in batches. The default batch size is 2.
 
 ## Tests
