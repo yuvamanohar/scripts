@@ -14,8 +14,7 @@ missing or changed files are copied with `rsync`.
 - `stat`
 - `rsync`
 
-Note: this script uses the macOS/BSD `stat` flags (`stat -f`). On Linux, the
-`stat` commands would need to be adjusted.
+The script supports both macOS/BSD `stat` flags and GNU/Linux `stat` flags.
 
 ## Usage
 
@@ -32,6 +31,12 @@ Example:
 
 Both arguments must be existing directories. The script does not create the
 target folder for you.
+
+Optional environment variables:
+
+- `SYNC_BATCH_SIZE` - positive integer for files per `rsync` batch; defaults to `2`
+- `SYNC_OUTPUT_DIR` - directory for log/report files; defaults to the current directory
+- `RSYNC_BIN` - alternate `rsync` executable, useful for tests
 
 ## What It Does
 
@@ -60,10 +65,20 @@ when the script exits.
 - Existing target files are overwritten when their size or modified time differs.
 - Extra files that exist only in the target folder are not deleted.
 - File comparison uses size and modified time, not file checksums.
-- Files are synced in batches of 2.
+- Files are synced in batches. The default batch size is 2.
+
+## Tests
+
+Run the test suite from the repo root:
+
+```bash
+./sync_folders/tests/run_tests.sh
+```
+
+The test runner uses plain Bash and reports line coverage for
+`sync_folders.sh`. It fails when coverage is below 90%.
 
 ## Exit Codes
 
 - `0` - sync completed successfully, or nothing needed to be synced
 - `1` - invalid usage, missing directory, or one or more sync batches failed
-
