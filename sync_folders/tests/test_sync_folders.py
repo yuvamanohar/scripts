@@ -33,6 +33,8 @@ class TempWorkspace(unittest.TestCase):
             "target": self.target,
             "output_dir": self.output,
             "batch_size": 2,
+            "max_retries": 3,
+            "retry_batch_sizes": (3, 2, 1),
             "rsync_bin": "rsync",
         }
         values.update(overrides)
@@ -44,6 +46,8 @@ class ConfigTests(TempWorkspace):
         env = {
             "SYNC_OUTPUT_DIR": str(self.output),
             "SYNC_BATCH_SIZE": "3",
+            "SYNC_MAX_RETRIES": "4",
+            "SYNC_RETRY_BATCH_SIZES": "4,2,1",
             "RSYNC_BIN": "custom-rsync",
         }
 
@@ -53,6 +57,8 @@ class ConfigTests(TempWorkspace):
         self.assertEqual(self.target, config.target)
         self.assertEqual(self.output, config.output_dir)
         self.assertEqual(3, config.batch_size)
+        self.assertEqual(4, config.max_retries)
+        self.assertEqual((4, 2, 1), config.retry_batch_sizes)
         self.assertEqual("custom-rsync", config.rsync_bin)
 
     def test_build_config_rejects_missing_directories_and_bad_batch_size(self) -> None:
@@ -75,13 +81,25 @@ class ConfigTests(TempWorkspace):
         with self.assertRaises(sync_folders.SyncError):
             sync_folders.build_config(self.source, self.target, batch_size=0, env={})
 
+        with self.assertRaises(sync_folders.SyncError):
+            sync_folders.build_config(self.source, self.target, max_retries=0, env={})
+
+        with self.assertRaises(sync_folders.SyncError):
+            sync_folders.build_config(self.source, self.target, retry_batch_sizes=(3, 0), env={})
+
     def test_positive_int_rejects_invalid_values(self) -> None:
         self.assertEqual(5, sync_folders.positive_int("5"))
+        self.assertEqual((3, 2, 1), sync_folders.positive_int_tuple("3,2,1"))
 
         for value in ("0", "-1", "abc"):
             with self.subTest(value=value):
                 with self.assertRaises(Exception):
                     sync_folders.positive_int(value)
+
+        for value in ("", "3,0", "3,abc"):
+            with self.subTest(value=value):
+                with self.assertRaises(Exception):
+                    sync_folders.positive_int_tuple(value)
 
 
 class DifferenceTests(TempWorkspace):
@@ -185,8 +203,92 @@ class SyncExecutionTests(TempWorkspace):
         with mock.patch("sync_folders.subprocess.run", return_value=subprocess.CompletedProcess([], 23)):
             self.assertFalse(sync_folders.run_batch(config, 1, (Path("bad.txt"),), logger))
 
-        self.assertIn("bad.txt", config.failed_list.read_text(encoding="utf-8"))
-        self.assertEqual(1, sync_folders.count_failed_batches(config.failed_list))
+        self.assertEqual((Path("bad.txt"),), sync_folders.read_failed_paths(config.failed_list))
+
+    def test_failed_file_helpers_refresh_live_unresolved_list(self) -> None:
+        config = self.config()
+        (self.source / "synced.txt").write_text("same\n", encoding="utf-8")
+        shutil.copy2(self.source / "synced.txt", self.target / "synced.txt")
+        (self.source / "missing.txt").write_text("missing\n", encoding="utf-8")
+
+        sync_folders.write_failed_paths(
+            config.failed_list,
+            (Path("synced.txt"), Path("missing.txt"), Path("missing.txt")),
+        )
+
+        unresolved = sync_folders.refresh_failed_paths(
+            config,
+            sync_folders.read_failed_paths(config.failed_list),
+        )
+
+        self.assertEqual((Path("missing.txt"),), unresolved)
+        self.assertEqual("missing.txt\n", config.failed_list.read_text(encoding="utf-8"))
+
+    def test_retry_failed_files_removes_files_that_sync_on_retry(self) -> None:
+        config = self.config()
+        logger = self.logger()
+        (self.source / "flaky.txt").write_text("eventually copied\n", encoding="utf-8")
+        sync_folders.write_failed_paths(config.failed_list, (Path("flaky.txt"),))
+
+        def copy_then_report_failure(
+            config: sync_folders.SyncConfig,
+            paths: tuple[Path, ...],
+            logger: sync_folders.Logger,
+        ) -> int:
+            for path in paths:
+                shutil.copy2(config.source / path, config.target / path)
+            return 23
+
+        with mock.patch("sync_folders.run_rsync", side_effect=copy_then_report_failure) as run_rsync:
+            self.assertEqual((), sync_folders.retry_failed_files(config, logger))
+
+        self.assertEqual(1, run_rsync.call_count)
+        self.assertFalse(config.failed_list.exists())
+
+    def test_retry_failed_files_exhausts_retries_and_keeps_unresolved_file(self) -> None:
+        config = self.config(max_retries=3)
+        logger = self.logger()
+        (self.source / "stuck.txt").write_text("still missing\n", encoding="utf-8")
+        sync_folders.write_failed_paths(config.failed_list, (Path("stuck.txt"),))
+
+        with (
+            mock.patch("sync_folders.run_rsync", return_value=23) as run_rsync,
+            mock.patch("sync_folders.time.sleep") as sleep,
+        ):
+            self.assertEqual((Path("stuck.txt"),), sync_folders.retry_failed_files(config, logger))
+
+        self.assertEqual(3, run_rsync.call_count)
+        self.assertEqual(2, sleep.call_count)
+        self.assertEqual("stuck.txt\n", config.failed_list.read_text(encoding="utf-8"))
+
+    def test_retry_failed_files_uses_configured_batch_size_schedule(self) -> None:
+        config = self.config(max_retries=3, retry_batch_sizes=(3, 2, 1))
+        logger = self.logger()
+        paths = tuple(Path(f"file-{index}.txt") for index in range(4))
+        for path in paths:
+            (self.source / path).write_text(path.name, encoding="utf-8")
+        sync_folders.write_failed_paths(config.failed_list, paths)
+
+        with (
+            mock.patch("sync_folders.run_rsync", return_value=23) as run_rsync,
+            mock.patch("sync_folders.time.sleep"),
+        ):
+            self.assertEqual(paths, sync_folders.retry_failed_files(config, logger))
+
+        retried_groups = [call.args[1] for call in run_rsync.call_args_list]
+        self.assertEqual(
+            [
+                paths[0:3],
+                paths[3:4],
+                paths[0:2],
+                paths[2:4],
+                paths[0:1],
+                paths[1:2],
+                paths[2:3],
+                paths[3:4],
+            ],
+            retried_groups,
+        )
 
     def test_sync_files_batches_success_and_failure(self) -> None:
         config = self.config(batch_size=2)
@@ -207,13 +309,24 @@ class SyncExecutionTests(TempWorkspace):
             paths: tuple[Path, ...],
             logger: sync_folders.Logger,
         ) -> bool:
-            sync_folders.append_failed_batch(config.failed_list, paths)
+            sync_folders.append_failed_paths(config.failed_list, paths)
             return False
 
-        with mock.patch("sync_folders.run_batch", side_effect=fail_first_batch):
+        with (
+            mock.patch("sync_folders.run_batch", side_effect=fail_first_batch),
+            mock.patch("sync_folders.retry_failed_files", return_value=(Path("bad.txt"),)),
+        ):
             self.assertEqual(1, sync_folders.sync_files(config, (Path("bad.txt"),), logger))
 
         self.assertIn("bad.txt", config.failed_list.read_text(encoding="utf-8"))
+
+        with (
+            mock.patch("sync_folders.run_batch", side_effect=fail_first_batch),
+            mock.patch("sync_folders.retry_failed_files", return_value=()),
+        ):
+            self.assertEqual(0, sync_folders.sync_files(config, (Path("bad.txt"),), logger))
+
+        self.assertFalse(config.failed_list.exists())
 
     def test_sync_folders_no_work_and_real_rsync_copy(self) -> None:
         unchanged = self.source / "same.txt"
@@ -245,6 +358,10 @@ class CliTests(TempWorkspace):
                     str(self.output),
                     "--batch-size",
                     "4",
+                    "--max-retries",
+                    "5",
+                    "--retry-batch-sizes",
+                    "4,2,1",
                     "--rsync-bin",
                     "custom-rsync",
                 ]
@@ -253,6 +370,8 @@ class CliTests(TempWorkspace):
         self.assertEqual(0, result)
         config = sync.call_args.args[0]
         self.assertEqual(4, config.batch_size)
+        self.assertEqual(5, config.max_retries)
+        self.assertEqual((4, 2, 1), config.retry_batch_sizes)
         self.assertEqual("custom-rsync", config.rsync_bin)
 
     def test_parse_args_rejects_missing_arguments(self) -> None:
