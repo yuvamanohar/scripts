@@ -27,6 +27,12 @@ The wrapper still works:
 ./sync_folders.sh <source_folder> <target_folder>
 ```
 
+`sync_folders_py.sh` runs the Python script through a virtual environment. By
+default it creates and uses `sync_folders/.venv` on first run. Set
+`SYNC_FOLDERS_VENV` to use a different virtual environment path, or
+`SYNC_FOLDERS_BOOTSTRAP_PYTHON` to choose the Python executable used to create
+the venv when it does not exist.
+
 Example:
 
 ```bash
