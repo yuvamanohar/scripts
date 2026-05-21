@@ -1,33 +1,29 @@
-#!/usr/bin/env python3
-"""Sync missing or changed files from one folder to another."""
+"""Internal package for the sync_folders command."""
 
-from __future__ import annotations
-
-from sync_folders_lib import (
+from .app import sync_files, sync_folders
+from .cli import main, parse_args
+from .config import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MAX_RETRIES,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_RETRY_BATCH_SIZES,
-    DifferenceResult,
-    Logger,
     SyncConfig,
     SyncError,
-    append_failed_paths,
-    batched,
     build_config,
-    ensure_output_directory,
-    compute_differences,
     ensure_target_directory,
-    files_differ,
-    format_path_list,
-    iter_source_files,
-    main,
+    ensure_output_directory,
     normalize_path,
-    parse_args,
-    paths_still_unresolved,
     positive_int,
     positive_int_tuple,
-    print_diff_summary,
+    validate_directory,
+)
+from .diff import DifferenceResult, compute_differences, files_differ, iter_source_files
+from .logging import Logger
+from .report import format_path_list, print_diff_summary, write_diff_report
+from .rsync import (
+    append_failed_paths,
+    batched,
+    paths_still_unresolved,
     read_failed_paths,
     refresh_failed_paths,
     retry_batch_size,
@@ -35,12 +31,8 @@ from sync_folders_lib import (
     rsync_command,
     run_batch,
     run_rsync,
-    sync_files,
-    sync_folders,
     unique_paths,
-    validate_directory,
     write_batch_file,
-    write_diff_report,
     write_failed_paths,
 )
 
@@ -56,9 +48,9 @@ __all__ = [
     "append_failed_paths",
     "batched",
     "build_config",
-    "ensure_output_directory",
     "compute_differences",
     "ensure_target_directory",
+    "ensure_output_directory",
     "files_differ",
     "format_path_list",
     "iter_source_files",
@@ -84,7 +76,3 @@ __all__ = [
     "write_diff_report",
     "write_failed_paths",
 ]
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

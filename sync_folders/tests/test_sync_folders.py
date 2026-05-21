@@ -63,29 +63,42 @@ class ConfigTests(TempWorkspace):
 
     def test_build_config_rejects_missing_directories_and_bad_batch_size(self) -> None:
         with self.assertRaises(sync_folders.SyncError):
-            sync_folders.build_config(self.source / "missing", self.target, env={})
+            sync_folders.build_config(self.source / "missing", self.target, output_dir=self.output, env={})
 
         missing_target = self.root / "new" / "target"
-        config = sync_folders.build_config(self.source, missing_target, env={})
+        config = sync_folders.build_config(self.source, missing_target, output_dir=self.output, env={})
         self.assertEqual(missing_target, config.target)
         self.assertTrue(missing_target.is_dir())
 
         target_file = self.root / "target-file"
         target_file.write_text("not a directory", encoding="utf-8")
         with self.assertRaises(sync_folders.SyncError):
-            sync_folders.build_config(self.source, target_file, env={})
+            sync_folders.build_config(self.source, target_file, output_dir=self.output, env={})
+
+        missing_output = self.root / "new" / "output"
+        config = sync_folders.build_config(self.source, self.target, output_dir=missing_output, env={})
+        self.assertEqual(missing_output, config.output_dir)
+        self.assertTrue(missing_output.is_dir())
+
+        output_file = self.root / "output-file"
+        output_file.write_text("not a directory", encoding="utf-8")
+        with self.assertRaises(sync_folders.SyncError):
+            sync_folders.build_config(self.source, self.target, output_dir=output_file, env={})
 
         with self.assertRaises(sync_folders.SyncError):
-            sync_folders.build_config(self.source, self.target, output_dir=self.root / "missing", env={})
+            sync_folders.build_config(self.source, self.target, output_dir=self.output, batch_size=0, env={})
 
         with self.assertRaises(sync_folders.SyncError):
-            sync_folders.build_config(self.source, self.target, batch_size=0, env={})
+            sync_folders.build_config(self.source, self.target, output_dir=self.output, max_retries=0, env={})
 
         with self.assertRaises(sync_folders.SyncError):
-            sync_folders.build_config(self.source, self.target, max_retries=0, env={})
+            sync_folders.build_config(self.source, self.target, output_dir=self.output, retry_batch_sizes=(3, 0), env={})
 
-        with self.assertRaises(sync_folders.SyncError):
-            sync_folders.build_config(self.source, self.target, retry_batch_sizes=(3, 0), env={})
+    def test_build_config_defaults_output_to_sync_folders_out(self) -> None:
+        config = sync_folders.build_config(self.source, self.target, env={})
+
+        self.assertEqual(sync_folders.DEFAULT_OUTPUT_DIR, config.output_dir)
+        self.assertTrue(config.output_dir.is_dir())
 
     def test_positive_int_rejects_invalid_values(self) -> None:
         self.assertEqual(5, sync_folders.positive_int("5"))
@@ -189,7 +202,7 @@ class SyncExecutionTests(TempWorkspace):
 
         self.assertTrue(sync_folders.run_batch(config, 1, (), logger))
 
-        with mock.patch("sync_folders.subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as run:
+        with mock.patch("sync_folders_lib.rsync.subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as run:
             self.assertTrue(sync_folders.run_batch(config, 1, (Path("one.txt"),), logger))
 
         self.assertEqual(1, run.call_count)
@@ -200,7 +213,7 @@ class SyncExecutionTests(TempWorkspace):
         config = self.config()
         logger = self.logger()
 
-        with mock.patch("sync_folders.subprocess.run", return_value=subprocess.CompletedProcess([], 23)):
+        with mock.patch("sync_folders_lib.rsync.subprocess.run", return_value=subprocess.CompletedProcess([], 23)):
             self.assertFalse(sync_folders.run_batch(config, 1, (Path("bad.txt"),), logger))
 
         self.assertEqual((Path("bad.txt"),), sync_folders.read_failed_paths(config.failed_list))
@@ -239,7 +252,7 @@ class SyncExecutionTests(TempWorkspace):
                 shutil.copy2(config.source / path, config.target / path)
             return 23
 
-        with mock.patch("sync_folders.run_rsync", side_effect=copy_then_report_failure) as run_rsync:
+        with mock.patch("sync_folders_lib.rsync.run_rsync", side_effect=copy_then_report_failure) as run_rsync:
             self.assertEqual((), sync_folders.retry_failed_files(config, logger))
 
         self.assertEqual(1, run_rsync.call_count)
@@ -252,8 +265,8 @@ class SyncExecutionTests(TempWorkspace):
         sync_folders.write_failed_paths(config.failed_list, (Path("stuck.txt"),))
 
         with (
-            mock.patch("sync_folders.run_rsync", return_value=23) as run_rsync,
-            mock.patch("sync_folders.time.sleep") as sleep,
+            mock.patch("sync_folders_lib.rsync.run_rsync", return_value=23) as run_rsync,
+            mock.patch("sync_folders_lib.rsync.time.sleep") as sleep,
         ):
             self.assertEqual((Path("stuck.txt"),), sync_folders.retry_failed_files(config, logger))
 
@@ -270,8 +283,8 @@ class SyncExecutionTests(TempWorkspace):
         sync_folders.write_failed_paths(config.failed_list, paths)
 
         with (
-            mock.patch("sync_folders.run_rsync", return_value=23) as run_rsync,
-            mock.patch("sync_folders.time.sleep"),
+            mock.patch("sync_folders_lib.rsync.run_rsync", return_value=23) as run_rsync,
+            mock.patch("sync_folders_lib.rsync.time.sleep"),
         ):
             self.assertEqual(paths, sync_folders.retry_failed_files(config, logger))
 
@@ -295,7 +308,7 @@ class SyncExecutionTests(TempWorkspace):
         logger = self.logger()
         paths = (Path("one.txt"), Path("two.txt"), Path("three.txt"))
 
-        with mock.patch("sync_folders.run_batch", return_value=True) as run_batch:
+        with mock.patch("sync_folders_lib.app.run_batch", return_value=True) as run_batch:
             self.assertEqual(0, sync_folders.sync_files(config, paths, logger))
 
         self.assertEqual(2, run_batch.call_count)
@@ -313,16 +326,16 @@ class SyncExecutionTests(TempWorkspace):
             return False
 
         with (
-            mock.patch("sync_folders.run_batch", side_effect=fail_first_batch),
-            mock.patch("sync_folders.retry_failed_files", return_value=(Path("bad.txt"),)),
+            mock.patch("sync_folders_lib.app.run_batch", side_effect=fail_first_batch),
+            mock.patch("sync_folders_lib.app.retry_failed_files", return_value=(Path("bad.txt"),)),
         ):
             self.assertEqual(1, sync_folders.sync_files(config, (Path("bad.txt"),), logger))
 
         self.assertIn("bad.txt", config.failed_list.read_text(encoding="utf-8"))
 
         with (
-            mock.patch("sync_folders.run_batch", side_effect=fail_first_batch),
-            mock.patch("sync_folders.retry_failed_files", return_value=()),
+            mock.patch("sync_folders_lib.app.run_batch", side_effect=fail_first_batch),
+            mock.patch("sync_folders_lib.app.retry_failed_files", return_value=()),
         ):
             self.assertEqual(0, sync_folders.sync_files(config, (Path("bad.txt"),), logger))
 
@@ -349,7 +362,7 @@ class CliTests(TempWorkspace):
 
         self.assertTrue(stderr.write.called)
 
-        with mock.patch("sync_folders.sync_folders", return_value=0) as sync:
+        with mock.patch("sync_folders_lib.cli.sync_folders", return_value=0) as sync:
             result = sync_folders.main(
                 [
                     str(self.source),

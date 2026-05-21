@@ -27,11 +27,15 @@ The wrapper still works:
 ./sync_folders.sh <source_folder> <target_folder>
 ```
 
-`sync_folders_py.sh` runs the Python script through a virtual environment. By
-default it creates and uses `sync_folders/.venv` on first run. Set
+`sync_folders.sh` runs the Python script through a virtual environment. By
+default it creates and uses `sync_folders/.venv` on first run. It also wraps the
+sync process with `caffeinate -ims` when `caffeinate` is available, which helps
+keep macOS awake while external-drive sync jobs are running. Set
 `SYNC_FOLDERS_VENV` to use a different virtual environment path, or
 `SYNC_FOLDERS_BOOTSTRAP_PYTHON` to choose the Python executable used to create
-the venv when it does not exist.
+the venv when it does not exist. Set `SYNC_FOLDERS_CAFFEINATE=0` to disable
+sleep prevention, or `SYNC_FOLDERS_CAFFEINATE_FLAGS` to override the default
+`caffeinate` flags.
 
 Example:
 
@@ -42,13 +46,25 @@ Example:
 The source folder must already exist. If the target folder does not exist, the
 script creates it.
 
+## Code Layout
+
+`sync_folders.py` is a thin CLI/import facade. The implementation lives in the
+local `sync_folders_lib/` package:
+
+- `config.py` - environment, CLI config, and validation
+- `diff.py` - source traversal and size/mtime comparison
+- `report.py` - human-readable diff report output
+- `rsync.py` - batching, rsync execution, failed-file tracking, and retries
+- `app.py` - high-level sync orchestration
+- `cli.py` - argument parsing and command entry point
+
 Optional environment variables:
 
 - `SYNC_BATCH_SIZE` - positive integer for files per `rsync` batch; defaults to `5`
 - `SYNC_MAX_RETRIES` - positive integer for failed-file retry attempts; defaults to `3`
 - `SYNC_RETRY_BATCH_SIZES` - comma-separated positive integers for retry
   batch sizes by attempt; defaults to `3,2,1`
-- `SYNC_OUTPUT_DIR` - directory for log/report files; defaults to the current directory
+- `SYNC_OUTPUT_DIR` - directory for log/report files; defaults to `sync_folders/out`
 - `RSYNC_BIN` - alternate `rsync` executable, useful for tests
 
 Equivalent CLI flags are available:
@@ -74,7 +90,8 @@ Equivalent CLI flags are available:
 
 ## Output Files
 
-The script writes these files in the directory where you run it:
+The script writes these files to `sync_folders/out` by default, or to the
+directory set with `--output-dir` / `SYNC_OUTPUT_DIR`:
 
 - `sync_folders.log` - timestamped progress and `rsync` output
 - `diff_files.txt` - list of missing and changed files
@@ -109,11 +126,12 @@ python3 sync_folders/tests/run_tests.py
 The compatibility wrapper also works:
 
 ```bash
-./sync_folders/tests/run_tests.sh
+./sync_folders/tests/run_tests_py.sh
 ```
 
 The test runner uses only the Python standard library and reports line coverage
-for `sync_folders.py`. It fails when coverage is below 90%.
+for the `sync_folders.py` facade and `sync_folders_lib/` package. It fails when
+coverage is below 90%.
 
 ## Exit Codes
 
