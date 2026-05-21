@@ -1,0 +1,6 @@
+[2026-05-21 11:54:18] Computing file differences (missing or changed) using size+mtime...
+[2026-05-21 11:54:18] Total source files: 40
+[2026-05-21 11:54:18] Missing files: 0
+[2026-05-21 11:54:18] Changed files: 0
+[2026-05-21 11:54:18] Diff file list written to: /Users/yuvamanohar/projects/scripts/sync_folders/out/diff_files.txt
+[2026-05-21 11:54:18] No missing or changed files; nothing to sync.
