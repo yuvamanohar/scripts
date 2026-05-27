@@ -21,6 +21,7 @@ class SyncConfig:
     max_retries: int
     retry_batch_sizes: tuple[int, ...]
     rsync_bin: str
+    dry_run: bool = False
 
     @property
     def log_file(self) -> Path:
@@ -88,6 +89,7 @@ def build_config(
     max_retries: int | None = None,
     retry_batch_sizes: Sequence[int] | None = None,
     rsync_bin: str | None = None,
+    dry_run: bool = False,
     env: os._Environ[str] | dict[str, str] = os.environ,
 ) -> SyncConfig:
     source_path = normalize_path(source)
@@ -116,10 +118,15 @@ def build_config(
         max_retries=configured_max_retries,
         retry_batch_sizes=configured_retry_batch_sizes,
         rsync_bin=rsync_bin or env.get("RSYNC_BIN", "rsync"),
+        dry_run=dry_run,
     )
 
     validate_directory(config.source, "Source folder")
-    ensure_target_directory(config.target)
+    if config.dry_run:
+        if config.target.exists() and not config.target.is_dir():
+            raise SyncError(f"Target folder exists but is not a directory: {config.target}")
+    else:
+        ensure_target_directory(config.target)
     ensure_output_directory(config.output_dir)
     if config.batch_size < 1:
         raise SyncError(f"SYNC_BATCH_SIZE must be a positive integer: {config.batch_size}")

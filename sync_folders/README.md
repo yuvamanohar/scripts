@@ -43,8 +43,14 @@ Example:
 ./sync_folders.py /path/to/source /path/to/backup
 ```
 
+To preview missing and changed files without copying anything:
+
+```bash
+./sync_folders.py --dry-run /path/to/source /path/to/backup
+```
+
 The source folder must already exist. If the target folder does not exist, the
-script creates it.
+script creates it, except in dry-run mode.
 
 ## Code Layout
 
@@ -74,6 +80,7 @@ Equivalent CLI flags are available:
 - `--retry-batch-sizes`
 - `--output-dir`
 - `--rsync-bin`
+- `--dry-run`
 
 ## What It Does
 
@@ -82,7 +89,8 @@ Equivalent CLI flags are available:
 3. Scans every regular file under the source folder.
 4. Builds a list of files that are missing or changed in the target folder.
 5. Writes a human-readable diff report.
-6. Copies only the missing or changed files from source to target using `rsync`.
+6. Copies only the missing or changed files from source to target using `rsync`,
+   unless `--dry-run` is set.
 7. Records files from failed batches as retry candidates if any `rsync`
    operation fails.
 8. Re-checks failed-file candidates after each retry and keeps
@@ -108,6 +116,8 @@ up automatically after each batch.
   time differs.
 - Extra files that exist only in the target folder are not deleted.
 - File comparison uses size and whole-second modified time, not file checksums.
+- Dry-run mode writes the log and diff report, then exits without creating the
+  target folder, copying files, or running retries.
 - Files are synced in batches. The default batch size is 5.
 - Files from failed batches are retried up to 3 times by default. Before each
   retry, the script re-checks those files and removes any that already synced.
@@ -135,5 +145,6 @@ coverage is below 90%.
 
 ## Exit Codes
 
-- `0` - sync completed successfully, or nothing needed to be synced
+- `0` - sync completed successfully, nothing needed to be synced, or dry run
+  completed successfully
 - `1` - invalid usage, missing directory, or one or more sync batches failed

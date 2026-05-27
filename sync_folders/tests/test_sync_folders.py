@@ -94,6 +94,21 @@ class ConfigTests(TempWorkspace):
         with self.assertRaises(sync_folders.SyncError):
             sync_folders.build_config(self.source, self.target, output_dir=self.output, retry_batch_sizes=(3, 0), env={})
 
+    def test_build_config_dry_run_does_not_create_missing_target(self) -> None:
+        missing_target = self.root / "new" / "target"
+
+        config = sync_folders.build_config(
+            self.source,
+            missing_target,
+            output_dir=self.output,
+            dry_run=True,
+            env={},
+        )
+
+        self.assertEqual(missing_target, config.target)
+        self.assertTrue(config.dry_run)
+        self.assertFalse(missing_target.exists())
+
     def test_build_config_defaults_output_to_sync_folders_out(self) -> None:
         config = sync_folders.build_config(self.source, self.target, env={})
 
@@ -354,6 +369,18 @@ class SyncExecutionTests(TempWorkspace):
         self.assertEqual(0, sync_folders.sync_folders(config, stream=StringIO()))
         self.assertEqual("hello\n", (self.target / "missing.txt").read_text(encoding="utf-8"))
 
+    def test_sync_folders_dry_run_reports_without_copying(self) -> None:
+        (self.source / "missing.txt").write_text("hello\n", encoding="utf-8")
+        config = self.config(dry_run=True)
+
+        with mock.patch("sync_folders_lib.app.run_batch") as run_batch:
+            self.assertEqual(0, sync_folders.sync_folders(config, stream=StringIO()))
+
+        self.assertFalse(run_batch.called)
+        self.assertFalse((self.target / "missing.txt").exists())
+        self.assertIn("Dry run enabled; 1 file would be synced.", config.log_file.read_text(encoding="utf-8"))
+        self.assertIn("missing.txt", config.diff_report.read_text(encoding="utf-8"))
+
 
 class CliTests(TempWorkspace):
     def test_main_handles_validation_error_and_success(self) -> None:
@@ -377,6 +404,7 @@ class CliTests(TempWorkspace):
                     "4,2,1",
                     "--rsync-bin",
                     "custom-rsync",
+                    "--dry-run",
                 ]
             )
 
@@ -386,6 +414,7 @@ class CliTests(TempWorkspace):
         self.assertEqual(5, config.max_retries)
         self.assertEqual((4, 2, 1), config.retry_batch_sizes)
         self.assertEqual("custom-rsync", config.rsync_bin)
+        self.assertTrue(config.dry_run)
 
     def test_parse_args_rejects_missing_arguments(self) -> None:
         with mock.patch("sys.stderr"):

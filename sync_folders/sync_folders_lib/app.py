@@ -51,4 +51,10 @@ def sync_folders(config: SyncConfig, stream: TextIO = sys.stdout) -> int:
         logger.log("No missing or changed files; nothing to sync.")
         return 0
 
+    if config.dry_run:
+        sync_count = len(report.sync_paths)
+        file_label = "file" if sync_count == 1 else "files"
+        logger.log(f"Dry run enabled; {sync_count} {file_label} would be synced.")
+        return 0
+
     return sync_files(config, report.sync_paths, logger)

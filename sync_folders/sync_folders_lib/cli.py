@@ -40,6 +40,11 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=None,
         help="rsync executable; defaults to RSYNC_BIN or rsync",
     )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="write the diff report and show what would sync without copying files",
+    )
     return parser.parse_args(argv)
 
 
@@ -55,6 +60,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_retries=args.max_retries,
             retry_batch_sizes=args.retry_batch_sizes,
             rsync_bin=args.rsync_bin,
+            dry_run=args.dry_run,
         )
     except (SyncError, argparse.ArgumentTypeError) as exc:
         print(exc, file=sys.stderr)
