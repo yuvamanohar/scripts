@@ -21,6 +21,8 @@ source changes affect how future work should start.
 
 - Compares source and target files by size and whole-second modified time.
 - Syncs only missing or changed files with `rsync`.
+- Supports `--dry-run` to write the log and diff report without creating the
+  target folder or running `rsync`.
 - Preserves relative directory structure.
 - Does not delete extra files in the target.
 - Writes output files to `out` by default.
@@ -34,6 +36,7 @@ source changes affect how future work should start.
 - max retries
 - retry batch sizes
 - rsync binary
+- dry-run mode
 
 ## Output Files
 
