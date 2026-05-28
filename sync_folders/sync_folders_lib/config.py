@@ -10,6 +10,18 @@ DEFAULT_BATCH_SIZE = 5
 DEFAULT_MAX_RETRIES = 3
 DEFAULT_RETRY_BATCH_SIZES = (3, 2, 1)
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "out"
+DEFAULT_EXCLUDE_PATTERNS = (
+    ".DS_Store",
+    "._*",
+    ".Trash/",
+    ".Trashes/",
+    ".Spotlight-V100/",
+    ".fseventsd/",
+    "TemporaryItems/",
+    "Thumbs.db",
+    "desktop.ini",
+    "$RECYCLE.BIN/",
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +34,8 @@ class SyncConfig:
     retry_batch_sizes: tuple[int, ...]
     rsync_bin: str
     dry_run: bool = False
+    default_excludes: bool = True
+    exclude_patterns: tuple[str, ...] = ()
 
     @property
     def log_file(self) -> Path:
@@ -34,6 +48,12 @@ class SyncConfig:
     @property
     def failed_list(self) -> Path:
         return self.output_dir / "failed_files.txt"
+
+    @property
+    def effective_exclude_patterns(self) -> tuple[str, ...]:
+        if self.default_excludes:
+            return DEFAULT_EXCLUDE_PATTERNS + self.exclude_patterns
+        return self.exclude_patterns
 
 
 class SyncError(RuntimeError):
@@ -80,6 +100,19 @@ def ensure_output_directory(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def read_exclude_patterns(path: str | Path) -> tuple[str, ...]:
+    exclude_file = normalize_path(path)
+    if not exclude_file.is_file():
+        raise SyncError(f"Exclude file does not exist or is not a file: {exclude_file}")
+
+    patterns = []
+    for line in exclude_file.read_text(encoding="utf-8").splitlines():
+        pattern = line.strip()
+        if pattern and not pattern.startswith("#"):
+            patterns.append(pattern)
+    return tuple(patterns)
+
+
 def build_config(
     source: str | Path,
     target: str | Path,
@@ -90,6 +123,9 @@ def build_config(
     retry_batch_sizes: Sequence[int] | None = None,
     rsync_bin: str | None = None,
     dry_run: bool = False,
+    default_excludes: bool = True,
+    exclude_patterns: Sequence[str] | None = None,
+    exclude_files: Sequence[str | Path] | None = None,
     env: os._Environ[str] | dict[str, str] = os.environ,
 ) -> SyncConfig:
     source_path = normalize_path(source)
@@ -109,6 +145,9 @@ def build_config(
                 ",".join(str(size) for size in DEFAULT_RETRY_BATCH_SIZES),
             )
         )
+    configured_exclude_patterns = tuple(exclude_patterns or ())
+    for exclude_file in exclude_files or ():
+        configured_exclude_patterns += read_exclude_patterns(exclude_file)
 
     config = SyncConfig(
         source=source_path,
@@ -119,6 +158,8 @@ def build_config(
         retry_batch_sizes=configured_retry_batch_sizes,
         rsync_bin=rsync_bin or env.get("RSYNC_BIN", "rsync"),
         dry_run=dry_run,
+        default_excludes=default_excludes,
+        exclude_patterns=configured_exclude_patterns,
     )
 
     validate_directory(config.source, "Source folder")

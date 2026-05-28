@@ -5,7 +5,8 @@ Sync missing or changed files from one folder to another.
 `sync_folders.py` compares every file in a source folder against the matching
 path in a target folder. Files are considered different when the target copy is
 missing, has a different size, or has a different modified time. Only those
-missing or changed files are copied with `rsync`.
+missing or changed files are copied with `rsync`. Built-in OS junk files such
+as `.DS_Store` are excluded by default.
 
 ## Requirements
 
@@ -81,12 +82,56 @@ Equivalent CLI flags are available:
 - `--output-dir`
 - `--rsync-bin`
 - `--dry-run`
+- `--no-default-excludes`
+- `--exclude`
+- `--exclude-from`
+
+Default excludes skip common OS metadata and trash folders:
+
+- `.DS_Store`
+- `._*`
+- `.Trash/`
+- `.Trashes/`
+- `.Spotlight-V100/`
+- `.fseventsd/`
+- `TemporaryItems/`
+- `Thumbs.db`
+- `desktop.ini`
+- `$RECYCLE.BIN/`
+
+Disable those built-in excludes when you need a stricter folder copy:
+
+```bash
+./sync_folders.py --no-default-excludes /path/to/source /path/to/backup
+```
+
+Add custom excludes with repeated `--exclude` flags:
+
+```bash
+./sync_folders.py --exclude ".venv/" --exclude "*.log" /path/to/source /path/to/backup
+```
+
+Or load patterns from a file:
+
+```bash
+./sync_folders.py --exclude-from sync-ignore.txt /path/to/source /path/to/backup
+```
+
+Exclude files use one pattern per line. Blank lines and lines starting with
+`#` are ignored.
+
+Pattern rules are intentionally small:
+
+- `name` matches a file or folder with that exact name anywhere.
+- `*.log` matches any path segment with that glob.
+- `folder/` excludes that folder and everything inside it.
+- `path/to/file` matches a path relative to the source folder.
 
 ## What It Does
 
 1. Validates that exactly two folder paths were provided.
-2. Confirms both folders exist.
-3. Scans every regular file under the source folder.
+2. Confirms the source folder exists and the target path is usable.
+3. Scans every non-excluded regular file under the source folder.
 4. Builds a list of files that are missing or changed in the target folder.
 5. Writes a human-readable diff report.
 6. Copies only the missing or changed files from source to target using `rsync`,
@@ -116,6 +161,9 @@ up automatically after each batch.
   time differs.
 - Extra files that exist only in the target folder are not deleted.
 - File comparison uses size and whole-second modified time, not file checksums.
+- Built-in OS junk excludes are enabled by default and can be disabled with
+  `--no-default-excludes`.
+- Excluded files are not listed in `diff_files.txt` and are not copied.
 - Dry-run mode writes the log and diff report, then exits without creating the
   target folder, copying files, or running retries.
 - Files are synced in batches. The default batch size is 5.

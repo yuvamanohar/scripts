@@ -42,8 +42,15 @@ def sync_folders(config: SyncConfig, stream: TextIO = sys.stdout) -> int:
     logger = Logger(config.log_file, stream)
     logger.reset()
     logger.log("Computing file differences (missing or changed) using size+mtime...")
+    exclude_patterns = config.effective_exclude_patterns
+    if exclude_patterns:
+        default_state = "enabled" if config.default_excludes else "disabled"
+        logger.log(
+            f"Exclude patterns active: {len(exclude_patterns)} "
+            f"(default excludes {default_state}, custom {len(config.exclude_patterns)})"
+        )
 
-    report = compute_differences(config.source, config.target)
+    report = compute_differences(config.source, config.target, exclude_patterns)
     write_diff_report(report, config.diff_report)
     print_diff_summary(report, config, logger, stream)
 
