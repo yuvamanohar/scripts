@@ -45,6 +45,26 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         action="store_true",
         help="write the diff report and show what would sync without copying files",
     )
+    parser.add_argument(
+        "--no-default-excludes",
+        action="store_false",
+        dest="default_excludes",
+        help="disable built-in OS junk excludes such as .DS_Store and .Trashes/",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="PATTERN",
+        help="exclude a file or folder pattern; can be used more than once",
+    )
+    parser.add_argument(
+        "--exclude-from",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="read exclude patterns from a file, one pattern per line",
+    )
     return parser.parse_args(argv)
 
 
@@ -61,6 +81,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             retry_batch_sizes=args.retry_batch_sizes,
             rsync_bin=args.rsync_bin,
             dry_run=args.dry_run,
+            default_excludes=args.default_excludes,
+            exclude_patterns=args.exclude,
+            exclude_files=args.exclude_from,
         )
     except (SyncError, argparse.ArgumentTypeError) as exc:
         print(exc, file=sys.stderr)

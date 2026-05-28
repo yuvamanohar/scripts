@@ -21,6 +21,13 @@ source changes affect how future work should start.
 
 - Compares source and target files by size and whole-second modified time.
 - Syncs only missing or changed files with `rsync`.
+- Excludes common OS junk by default using `DEFAULT_EXCLUDE_PATTERNS`
+  (`.DS_Store`, `._*`, `.Trash/`, `.Trashes/`, `.Spotlight-V100/`,
+  `.fseventsd/`, `TemporaryItems/`, `Thumbs.db`, `desktop.ini`,
+  `$RECYCLE.BIN/`).
+- Supports `--no-default-excludes`, repeated `--exclude PATTERN`, and repeated
+  `--exclude-from FILE`; excluded files are omitted from diff reports and sync
+  batches.
 - Supports `--dry-run` to write the log and diff report without creating the
   target folder or running `rsync`.
 - Preserves relative directory structure.
@@ -37,6 +44,8 @@ source changes affect how future work should start.
 - retry batch sizes
 - rsync binary
 - dry-run mode
+- default exclude toggle
+- custom exclude patterns and exclude files
 
 ## Output Files
 

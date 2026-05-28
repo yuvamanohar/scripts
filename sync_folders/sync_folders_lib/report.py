@@ -31,7 +31,7 @@ def print_diff_summary(
     logger: Logger,
     stream: TextIO = sys.stdout,
 ) -> None:
-    logger.log(f"Total source files: {report.total_files}")
+    logger.log(f"Compared source files: {report.total_files}")
     logger.log(f"Missing files: {len(report.missing)}")
     logger.log(f"Changed files: {len(report.changed)}")
     logger.log(f"Diff file list written to: {config.diff_report}")

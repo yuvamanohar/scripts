@@ -60,6 +60,8 @@ class ConfigTests(TempWorkspace):
         self.assertEqual(4, config.max_retries)
         self.assertEqual((4, 2, 1), config.retry_batch_sizes)
         self.assertEqual("custom-rsync", config.rsync_bin)
+        self.assertTrue(config.default_excludes)
+        self.assertEqual(sync_folders.DEFAULT_EXCLUDE_PATTERNS, config.effective_exclude_patterns)
 
     def test_build_config_rejects_missing_directories_and_bad_batch_size(self) -> None:
         with self.assertRaises(sync_folders.SyncError):
@@ -115,6 +117,33 @@ class ConfigTests(TempWorkspace):
         self.assertEqual(sync_folders.DEFAULT_OUTPUT_DIR, config.output_dir)
         self.assertTrue(config.output_dir.is_dir())
 
+    def test_build_config_loads_custom_exclude_patterns(self) -> None:
+        exclude_file = self.root / "exclude.txt"
+        exclude_file.write_text("\n# comment\n.cache/\n*.tmp\n", encoding="utf-8")
+
+        config = sync_folders.build_config(
+            self.source,
+            self.target,
+            output_dir=self.output,
+            default_excludes=False,
+            exclude_patterns=("*.log",),
+            exclude_files=(exclude_file,),
+            env={},
+        )
+
+        self.assertFalse(config.default_excludes)
+        self.assertEqual(("*.log", ".cache/", "*.tmp"), config.exclude_patterns)
+        self.assertEqual(config.exclude_patterns, config.effective_exclude_patterns)
+
+        with self.assertRaises(sync_folders.SyncError):
+            sync_folders.build_config(
+                self.source,
+                self.target,
+                output_dir=self.output,
+                exclude_files=(self.root / "missing-excludes.txt",),
+                env={},
+            )
+
     def test_positive_int_rejects_invalid_values(self) -> None:
         self.assertEqual(5, sync_folders.positive_int("5"))
         self.assertEqual((3, 2, 1), sync_folders.positive_int_tuple("3,2,1"))
@@ -151,6 +180,35 @@ class DifferenceTests(TempWorkspace):
         self.assertEqual((Path("nested/missing.txt"),), report.missing)
         self.assertEqual((Path("changed.txt"),), report.changed)
         self.assertEqual((Path("nested/missing.txt"), Path("changed.txt")), report.sync_paths)
+
+    def test_compute_differences_skips_default_and_custom_excludes(self) -> None:
+        (self.source / ".DS_Store").write_text("finder metadata\n", encoding="utf-8")
+        trash = self.source / ".Trashes"
+        trash.mkdir()
+        (trash / "deleted.txt").write_text("deleted\n", encoding="utf-8")
+        nested = self.source / "nested"
+        nested.mkdir()
+        (nested / "debug.log").write_text("debug\n", encoding="utf-8")
+        (nested / "keep.txt").write_text("keep\n", encoding="utf-8")
+
+        report = sync_folders.compute_differences(
+            self.source,
+            self.target,
+            sync_folders.DEFAULT_EXCLUDE_PATTERNS + ("*.log",),
+        )
+
+        self.assertEqual(1, report.total_files)
+        self.assertEqual((Path("nested/keep.txt"),), report.missing)
+        self.assertNotIn(Path(".DS_Store"), report.sync_paths)
+        self.assertNotIn(Path(".Trashes/deleted.txt"), report.sync_paths)
+        self.assertNotIn(Path("nested/debug.log"), report.sync_paths)
+
+    def test_exclude_pattern_matching_semantics(self) -> None:
+        self.assertTrue(sync_folders.path_matches_pattern(Path("nested/file.log"), "*.log"))
+        self.assertTrue(sync_folders.path_matches_pattern(Path("nested/.Trash/file.txt"), ".Trash/"))
+        self.assertTrue(sync_folders.path_matches_pattern(Path("nested/file.txt"), "nested/file.txt"))
+        self.assertTrue(sync_folders.path_matches_pattern(Path("nested/deeper/file.txt"), "nested/deeper/"))
+        self.assertFalse(sync_folders.path_matches_pattern(Path("nested/file.txt"), "*.log"))
 
     def test_files_differ_uses_size_and_mtime(self) -> None:
         source_file = self.source / "file.txt"
@@ -388,6 +446,8 @@ class CliTests(TempWorkspace):
             self.assertEqual(1, sync_folders.main([str(self.source / "missing"), str(self.target)]))
 
         self.assertTrue(stderr.write.called)
+        exclude_file = self.root / "exclude.txt"
+        exclude_file.write_text(".cache/\n", encoding="utf-8")
 
         with mock.patch("sync_folders_lib.cli.sync_folders", return_value=0) as sync:
             result = sync_folders.main(
@@ -405,6 +465,11 @@ class CliTests(TempWorkspace):
                     "--rsync-bin",
                     "custom-rsync",
                     "--dry-run",
+                    "--no-default-excludes",
+                    "--exclude",
+                    "*.log",
+                    "--exclude-from",
+                    str(exclude_file),
                 ]
             )
 
@@ -415,6 +480,8 @@ class CliTests(TempWorkspace):
         self.assertEqual((4, 2, 1), config.retry_batch_sizes)
         self.assertEqual("custom-rsync", config.rsync_bin)
         self.assertTrue(config.dry_run)
+        self.assertFalse(config.default_excludes)
+        self.assertEqual(("*.log", ".cache/"), config.exclude_patterns)
 
     def test_parse_args_rejects_missing_arguments(self) -> None:
         with mock.patch("sys.stderr"):

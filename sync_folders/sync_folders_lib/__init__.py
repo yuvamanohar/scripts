@@ -4,6 +4,7 @@ from .app import sync_files, sync_folders
 from .cli import main, parse_args
 from .config import (
     DEFAULT_BATCH_SIZE,
+    DEFAULT_EXCLUDE_PATTERNS,
     DEFAULT_MAX_RETRIES,
     DEFAULT_OUTPUT_DIR,
     DEFAULT_RETRY_BATCH_SIZES,
@@ -15,9 +16,18 @@ from .config import (
     normalize_path,
     positive_int,
     positive_int_tuple,
+    read_exclude_patterns,
     validate_directory,
 )
-from .diff import DifferenceResult, compute_differences, files_differ, iter_source_files
+from .diff import (
+    DifferenceResult,
+    clean_exclude_pattern,
+    compute_differences,
+    files_differ,
+    is_excluded_path,
+    iter_source_files,
+    path_matches_pattern,
+)
 from .logging import Logger
 from .report import format_path_list, print_diff_summary, write_diff_report
 from .rsync import (
@@ -38,6 +48,7 @@ from .rsync import (
 
 __all__ = [
     "DEFAULT_BATCH_SIZE",
+    "DEFAULT_EXCLUDE_PATTERNS",
     "DEFAULT_MAX_RETRIES",
     "DEFAULT_OUTPUT_DIR",
     "DEFAULT_RETRY_BATCH_SIZES",
@@ -48,6 +59,7 @@ __all__ = [
     "append_failed_paths",
     "batched",
     "build_config",
+    "clean_exclude_pattern",
     "compute_differences",
     "ensure_target_directory",
     "ensure_output_directory",
@@ -61,6 +73,7 @@ __all__ = [
     "positive_int",
     "positive_int_tuple",
     "print_diff_summary",
+    "read_exclude_patterns",
     "read_failed_paths",
     "refresh_failed_paths",
     "retry_batch_size",
@@ -68,8 +81,10 @@ __all__ = [
     "rsync_command",
     "run_batch",
     "run_rsync",
+    "is_excluded_path",
     "sync_files",
     "sync_folders",
+    "path_matches_pattern",
     "unique_paths",
     "validate_directory",
     "write_batch_file",
